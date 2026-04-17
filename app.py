@@ -36,7 +36,7 @@ html, body, [class*="css"] { font-family: 'Noto Sans TC', sans-serif; }
 """, unsafe_allow_html=True)
 
 # ── 設定與連線 ──────────────────────────────────────────────
-TARGETS = {"美股大類": 50, "台股": 25, "現金": 15, "虛擬貨幣": 10}
+TARGETS = {"美股大類": 50, "台股": 30, "現金": 10, "虛擬貨幣": 10}
 COLORS  = ["#4fd1c5", "#90cdf4", "#68d391", "#f6ad55"]
 
 # 初始化 Google Sheets 連線
