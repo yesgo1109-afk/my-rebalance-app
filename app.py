@@ -155,7 +155,7 @@ if st.button("🔍 開始分析", type="primary", use_container_width=True):
         "比例": list(actual.values()),
     })
     st.subheader("📊 資產比例圖")
-    st.bar_chart(chart_data.set_index("類別"), color=COLORS, horizontal=True)
+    st.bar_chart(chart_data.set_index("類別"),horizontal=True)
 
     # ── Asset cards ──
     st.subheader("📈 各類別分析")
