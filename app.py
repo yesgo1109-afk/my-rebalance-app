@@ -6,32 +6,14 @@ import io
 from datetime import datetime
 
 # ── 頁面設定 ─────────────────────────────────────────────
-st.set_page_config(
-    page_title="資產再平衡系統",
-    page_icon="📊",
-    layout="centered",
-)
+st.set_page_config(page_title="資產再平衡系統", page_icon="📊", layout="centered")
 
 # ── 自定義 CSS ─────────────────────────────────────────────
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap');
 html, body, [class*="css"] { font-family: 'Noto Sans TC', sans-serif; }
-.metric-card {
-    background: #1e2230;
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin-bottom: 10px;
-    border-left: 4px solid #4fd1c5;
-}
-.action-box {
-    background: rgba(246,173,85,0.1);
-    border-left: 3px solid #f6ad55;
-    border-radius: 6px;
-    padding: 8px 12px;
-    margin-top: 8px;
-    font-size: 14px;
-}
+.metric-card { background: #1e2230; border-radius: 12px; padding: 16px 20px; border-left: 4px solid #4fd1c5; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -39,7 +21,7 @@ html, body, [class*="css"] { font-family: 'Noto Sans TC', sans-serif; }
 TARGETS = {"美股大類": 50, "台股": 30, "現金": 10, "虛擬貨幣": 10}
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# ── 匯率抓取功能 ────────────────────────────────────────────
+# ── 匯率功能 ────────────────────────────────────────────
 @st.cache_data(ttl=1800)
 def fetch_usd_rate():
     try:
@@ -48,20 +30,15 @@ def fetch_usd_rate():
         r.encoding = "utf-8"
         df = pd.read_csv(io.StringIO(r.text), header=None)
         row = df[df[0].astype(str).str.contains("USD", na=False)]
-        if not row.empty:
-            sell = float(row.iloc[0, 13])
-            return sell, None
-    except Exception as e:
-        return None, str(e)
-    return None, "找不到數據"
+        if not row.empty: return float(row.iloc[0, 13]), None
+    except Exception as e: return None, str(e)
+    return None, "無法取得匯率"
 
 # ── 主界面 ──────────────────────────────────────────────────
 st.title("📊 資產再平衡指揮中心")
-st.caption("同步雲端版 · 自動化分析")
 
-# 匯率區
 auto_rate, err = fetch_usd_rate()
-usd_rate = st.number_input("💵 當前美金匯率 (台銀即期)", value=auto_rate if auto_rate else 32.5, step=0.01)
+usd_rate = st.number_input("💵 當前美金匯率", value=auto_rate if auto_rate else 32.5, step=0.01)
 
 st.divider()
 
@@ -71,16 +48,16 @@ col1, col2 = st.columns(2)
 with col1:
     twd_cash   = st.number_input("🏦 台幣現金 (TWD)", min_value=0, step=10000)
     tw_stock   = st.number_input("📈 台股總額 (TWD)", min_value=0, step=10000)
-    crypto_twd = st.number_input("₿ 虛擬貨幣-台幣帳戶 (TWD)", min_value=0, step=1000, help="例如 MAX 裡的台幣餘額")
+    crypto_twd = st.number_input("₿ 虛擬貨幣-台幣帳戶 (TWD)", min_value=0, step=1000)
 with col2:
     sub_broker = st.number_input("🌐 複委託 (USD)",   min_value=0, step=100)
     us_stock   = st.number_input("🇺🇸 海外美股 (USD)", min_value=0, step=100)
-    crypto_usd = st.number_input("₿ 虛擬貨幣-美金帳戶 (USDT)", min_value=0, step=100, help="例如幣安裡的 USDT")
+    crypto_usd = st.number_input("₿ 虛擬貨幣-美金帳戶 (USDT)", min_value=0, step=100)
 
 st.divider()
 
 # 容忍區間
-st.subheader("⚙️ 容忍區間設定（±%）")
+st.subheader("⚙️ 容忍區間設定 (±%)")
 c1, c2, c3, c4 = st.columns(4)
 tol_us = c1.number_input("美股", 1, 20, 5)
 tol_tw = c2.number_input("台股", 1, 20, 5)
@@ -88,82 +65,54 @@ tol_cash = c3.number_input("現金", 1, 20, 8)
 tol_crypto = c4.number_input("虛幣", 1, 20, 3)
 tols = {"美股大類": tol_us, "台股": tol_tw, "現金": tol_cash, "虛擬貨幣": tol_crypto}
 
-# ── 開始分析與存檔 ──────────────────────────────────────────
+# ── 分析與同步 ──────────────────────────────────────────
 if st.button("🔍 開始分析並同步至雲端", type="primary", use_container_width=True):
     us_twd = (sub_broker + us_stock) * usd_rate
-    # 虛擬貨幣總額 = (美金帳戶 * 匯率) + 台幣帳戶
     crypto_total_twd = (crypto_usd * usd_rate) + crypto_twd
     total = twd_cash + tw_stock + us_twd + crypto_total_twd
 
-    if total == 0:
-        st.error("請輸入資產金額")
-    else:
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if total > 0:
         actual_pcts = {
             "美股大類": us_twd / total * 100,
             "台股": tw_stock / total * 100,
             "現金": twd_cash / total * 100,
             "虛擬貨幣": crypto_total_twd / total * 100
         }
-
-        # 顯示總結果
-        st.metric("總資產（台幣估值）", f"NT$ {total:,.0f}")
         
-        # 準備存檔數據 (Google Sheets 需要對應這些標題)
-        new_data = {
-            "Date": now_str,
-            "Total": total,
-            "USD_Rate": usd_rate,
+        st.metric("總資產估值", f"NT$ {total:,.0f}")
+
+        # 準備要同步的資料（嚴格對應表頭）
+        save_data = {
+            "Date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "Total": float(total),
+            "USD_Rate": float(usd_rate),
             "US_Stock_Pct": round(actual_pcts["美股大類"], 2),
             "TW_Stock_Pct": round(actual_pcts["台股"], 2),
             "Cash_Pct": round(actual_pcts["現金"], 2),
             "Crypto_Pct": round(actual_pcts["虛擬貨幣"], 2)
         }
 
-        # 寫入 Google Sheets
         try:
-            existing_df = conn.read(ttl=0)
-            updated_df = pd.concat([existing_df, pd.DataFrame([new_data])], ignore_index=True)
+            # 讀取並更新
+            df = conn.read(ttl=0)
+            # 確保新資料與舊資料欄位順序一致
+            new_row = pd.DataFrame([save_data])
+            updated_df = pd.concat([df, new_row], ignore_index=True)
             conn.update(data=updated_df)
-            st.success("✅ 數據已成功同步至雲端紀錄")
+            st.success("✅ 同步成功！資料已寫入 Google Sheets。")
         except Exception as e:
-            st.error(f"❌ 雲端同步失敗：請確認 Secrets 設定或表單權限。錯誤：{e}")
+            st.error(f"❌ 同步失敗：{e}")
 
-        # 顯示圖表
-        chart_df = pd.DataFrame({"類別": list(actual_pcts.keys()), "比例": list(actual_pcts.values())})
-        st.bar_chart(chart_df.set_index("類別"), color="#4fd1c5", horizontal=True)
+        # 顯示簡易圖表
+        st.bar_chart(pd.DataFrame(actual_pcts.items(), columns=['類別', '比例']).set_index('類別'), color="#4fd1c5", horizontal=True)
 
-        # 各類別分析
-        for cat, target in TARGETS.items():
-            pct = actual_pcts[cat]
-            diff = pct - target
-            is_ok = abs(diff) <= tols[cat]
-            status = "✅ 正常" if is_ok else "⚠️ 需調整"
-            
-            with st.expander(f"{status} {cat}: {pct:.1f}% (目標 {target}%)"):
-                st.write(f"目前偏離: {diff:+.1f}%")
-                if not is_ok:
-                    gap = abs(diff / 100 * total)
-                    action = "賣出" if diff > 0 else "加碼"
-                    
-                    if "美股" in cat:
-                        st.warning(f"💡 建議 {action} 約 {gap / usd_rate:,.0f} USD")
-                    elif "虛擬貨幣" in cat:
-                        st.warning(f"💡 建議 {action} 約 {gap / usd_rate:,.0f} USDT (或等值幣種)")
-                    else:
-                        st.warning(f"💡 建議 {action} 約 NT$ {gap:,.0f}")
-
-# ── 顯示歷史紀錄（從 Google Sheets 讀取） ─────────────────────────
+# ── 歷史紀錄趨勢 ─────────────────────────────────────────
 st.divider()
 st.subheader("📁 雲端歷史趨勢")
 try:
     history_df = conn.read(ttl=0)
     if not history_df.empty:
-        # 只顯示最後 10 筆紀錄
-        st.dataframe(history_df.tail(10), use_container_width=True)
-        # 總資產成長線
+        st.dataframe(history_df.tail(5), use_container_width=True)
         st.line_chart(history_df.set_index("Date")["Total"], color="#4fd1c5")
-    else:
-        st.caption("尚無雲端紀錄。")
 except:
-    st.caption("連線至 Google Sheets 中，請確保 Secrets 設定正確。")
+    st.info("尚未偵測到歷史紀錄。")
