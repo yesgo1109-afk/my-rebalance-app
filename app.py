@@ -25,7 +25,7 @@ html, body, [class*="css"] { font-family: 'Noto Sans TC', sans-serif; }
 """, unsafe_allow_html=True)
 
 # ── 設定 ────────────────────────────────────────────────────
-TARGETS = {"美股大類": 50, "台股": 30, "現金": 10, "虛擬貨幣": 10}
+TARGETS = {"美股大類": 45, "台股": 40, "現金": 10, "虛擬貨幣": 5}
 COLORS  = ["#4fd1c5", "#90cdf4", "#68d391", "#f6ad55"]
 
 # ── Supabase 工具函式 ────────────────────────────────────────
@@ -179,7 +179,7 @@ if st.button("🔍 開始分析並儲存紀錄", type="primary", use_container_w
     # 比例圖
     st.subheader("📊 資產比例圖")
     chart_data = pd.DataFrame({"類別": list(actual.keys()), "比例": list(actual.values())})
-    st.bar_chart(chart_data.set_index("類別"), color=COLORS, horizontal=True)
+    st.bar_chart(chart_data.set_index("類別"), color="#4fd1c5", horizontal=True)
 
     # 各類別分析
     st.subheader("📈 各類別分析")
