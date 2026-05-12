@@ -25,7 +25,7 @@ html, body, [class*="css"] { font-family: 'Noto Sans TC', sans-serif; }
 """, unsafe_allow_html=True)
 
 # ── 設定 ────────────────────────────────────────────────────
-TARGETS = {"美股大類": 40, "台股": 40, "現金": 10, "虛擬貨幣": 10}
+TARGETS = {"美股大類": 45, "台股": 40, "現金": 5, "虛擬貨幣": 10}
 COLORS  = ["#4fd1c5", "#90cdf4", "#68d391", "#f6ad55"]
 
 # ── Supabase 工具函式 ────────────────────────────────────────
@@ -116,7 +116,7 @@ if auto_rate:
     default_rate = auto_rate
 else:
     col_rate.warning(f"⚠️ 自動抓取失敗（{err}）")
-    default_rate = 32.5
+    default_rate = 31.5
 
 if st.checkbox("✏️ 手動輸入匯率"):
     usd_rate = st.number_input("輸入匯率", min_value=20.0, max_value=50.0,
