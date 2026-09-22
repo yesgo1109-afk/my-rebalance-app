@@ -21,6 +21,13 @@ html, body, [class*="css"] { font-family: 'Noto Sans TC', sans-serif; }
     margin-top: 8px;
     font-size: 14px;
 }
+.debt-box {
+    background: rgba(252,129,129,0.08);
+    border-left: 3px solid #fc8181;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -39,7 +46,6 @@ HEADERS = {
 }
 
 def sb_load_history():
-    """從 Supabase 讀取歷史紀錄，依時間倒序"""
     try:
         r = requests.get(
             f"{SUPABASE_URL}/rest/v1/asset_history",
@@ -54,7 +60,6 @@ def sb_load_history():
     return []
 
 def sb_save_history(row: dict):
-    """新增一筆紀錄到 Supabase"""
     try:
         r = requests.post(
             f"{SUPABASE_URL}/rest/v1/asset_history",
@@ -68,7 +73,6 @@ def sb_save_history(row: dict):
         return False
 
 def sb_clear_history():
-    """清除所有歷史紀錄"""
     try:
         r = requests.delete(
             f"{SUPABASE_URL}/rest/v1/asset_history",
@@ -140,6 +144,23 @@ with col2:
 
 st.divider()
 
+# ── 貸款輸入 ────────────────────────────────────────────────
+st.subheader("🏧 貸款餘額輸入")
+st.caption("輸入目前尚未還清的貸款金額，用於計算淨資產")
+
+loan_count = st.number_input("貸款筆數", min_value=1, max_value=5, value=1, step=1)
+loans = []
+loan_cols = st.columns(2)
+for i in range(loan_count):
+    with loan_cols[i % 2]:
+        name = st.text_input(f"貸款名稱 {i+1}", value=f"貸款{i+1}", key=f"loan_name_{i}")
+        amount = st.number_input(f"餘額 (TWD) {i+1}", min_value=0, value=0, step=10000, key=f"loan_amt_{i}")
+        loans.append({"name": name, "amount": amount})
+
+total_loan = sum(l["amount"] for l in loans)
+
+st.divider()
+
 # ── 容忍區間 ────────────────────────────────────────────────
 st.subheader("⚙️ 容忍區間設定（±%）")
 c1, c2, c3, c4 = st.columns(4)
@@ -156,32 +177,52 @@ if st.button("🔍 開始分析並儲存紀錄", type="primary", use_container_w
 
     us_twd           = (sub_broker + us_stock) * usd_rate
     crypto_total_twd = (crypto_usd * usd_rate) + crypto_twd
-    total            = twd_cash + tw_stock + us_twd + crypto_total_twd
+    total_asset      = twd_cash + tw_stock + us_twd + crypto_total_twd
+    net_asset        = total_asset - total_loan   # 淨資產 = 總資產 - 貸款
 
-    if total == 0:
+    if total_asset == 0:
         st.error("請輸入至少一個資產金額")
         st.stop()
+    if net_asset <= 0:
+        st.error("⚠️ 貸款餘額超過總資產，無法進行再平衡計算")
+        st.stop()
 
+    # 用淨資產計算比例
     actual = {
-        "美股大類": us_twd           / total * 100,
-        "台股":     tw_stock         / total * 100,
-        "現金":     twd_cash         / total * 100,
-        "虛擬貨幣": crypto_total_twd / total * 100,
+        "美股大類": us_twd           / net_asset * 100,
+        "台股":     tw_stock         / net_asset * 100,
+        "現金":     twd_cash         / net_asset * 100,
+        "虛擬貨幣": crypto_total_twd / net_asset * 100,
     }
 
-    # 總覽
+    # ── 總覽 ──
     st.subheader("📋 分析結果")
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    col_t, col_d = st.columns(2)
-    col_t.metric("總資產（台幣估值）", f"NT$ {total:,.0f}")
-    col_d.metric("分析時間", now_str[5:])
 
-    # 比例圖
-    st.subheader("📊 資產比例圖")
+    col_a, col_b, col_c = st.columns(3)
+    col_a.metric("總資產（台幣估值）", f"NT$ {total_asset:,.0f}")
+    col_b.metric("貸款總餘額", f"NT$ {total_loan:,.0f}", delta=f"-{total_loan:,.0f}", delta_color="inverse")
+    col_c.metric("淨資產", f"NT$ {net_asset:,.0f}")
+
+    # 貸款明細
+    if total_loan > 0:
+        st.markdown("**貸款明細：**")
+        for l in loans:
+            if l["amount"] > 0:
+                pct_of_asset = l["amount"] / total_asset * 100
+                st.markdown(
+                    f'<div class="debt-box">🏧 <b>{l["name"]}</b>　NT$ {l["amount"]:,.0f}　<span style="color:#fc8181;">佔總資產 {pct_of_asset:.1f}%</span></div>',
+                    unsafe_allow_html=True
+                )
+
+    st.caption(f"分析時間：{now_str[5:]}　匯率：{usd_rate:.2f}")
+
+    # ── 比例圖（基於淨資產）──
+    st.subheader("📊 資產比例圖（以淨資產為基準）")
     chart_data = pd.DataFrame({"類別": list(actual.keys()), "比例": list(actual.values())})
     st.bar_chart(chart_data.set_index("類別"), color="#4fd1c5", horizontal=True)
 
-    # 各類別分析
+    # ── 各類別分析 ──
     st.subheader("📈 各類別分析")
     alerts = []
     for cat in ["美股大類", "台股", "現金", "虛擬貨幣"]:
@@ -213,7 +254,7 @@ if st.button("🔍 開始分析並儲存紀錄", type="primary", use_container_w
 
             if not is_ok:
                 alerts.append((cat, diff, tol))
-                gap_twd = abs(diff / 100 * total)
+                gap_twd = abs(diff / 100 * net_asset)   # 以淨資產計算缺口
                 gap_usd = gap_twd / usd_rate
                 if cat == "美股大類":
                     action = f"建議{'賣出' if diff>0 else '補足'} **{gap_usd:,.0f} USD**"
@@ -225,7 +266,7 @@ if st.button("🔍 開始分析並儲存紀錄", type="primary", use_container_w
                     action = f"建議{'賣出' if diff>0 else '買入'} **{gap_usd:,.0f} USDT**"
                 st.markdown(f'<div class="action-box">💡 {action}</div>', unsafe_allow_html=True)
 
-    # 操作順序
+    # ── 操作順序 ──
     if alerts:
         st.subheader("📋 建議操作順序")
         for i, (cat, diff, tol) in enumerate(sorted(alerts, key=lambda x: abs(x[1]), reverse=True), 1):
@@ -234,10 +275,12 @@ if st.button("🔍 開始分析並儲存紀錄", type="primary", use_container_w
             st.markdown(f"**{i}.** {urgency} **{cat}** {dir_str}（偏離 {diff:+.1f}%）")
         st.info("⚠️ **稅務提醒：** 美股/複委託獲利屬海外所得，年度超過 100 萬需申報最低稅負；虛幣交易獲利依財政部規定課稅，請諮詢會計師。")
 
-    # 儲存至 Supabase
+    # ── 儲存至 Supabase ──
     row = {
         "date":         now_str,
-        "total":        round(total, 0),
+        "total":        round(total_asset, 0),
+        "net_asset":    round(net_asset, 0),
+        "total_loan":   round(total_loan, 0),
         "usd_rate":     round(usd_rate, 2),
         "us_stock_pct": round(actual["美股大類"], 2),
         "tw_stock_pct": round(actual["台股"], 2),
@@ -256,15 +299,26 @@ st.subheader("📁 歷史趨勢紀錄")
 history = sb_load_history()
 if history:
     df = pd.DataFrame(history)
-    display_df = df[["date", "total", "usd_rate", "us_stock_pct", "tw_stock_pct", "cash_pct", "crypto_pct"]].copy()
-    display_df.columns = ["時間", "總資產(NT$)", "匯率", "美股%", "台股%", "現金%", "虛幣%"]
+
+    # 相容舊資料（沒有 net_asset / total_loan 欄位）
+    for col in ["net_asset", "total_loan"]:
+        if col not in df.columns:
+            df[col] = None
+
+    display_cols = ["date", "total", "net_asset", "total_loan", "usd_rate",
+                    "us_stock_pct", "tw_stock_pct", "cash_pct", "crypto_pct"]
+    display_df = df[display_cols].copy()
+    display_df.columns = ["時間", "總資產(NT$)", "淨資產(NT$)", "貸款(NT$)",
+                          "匯率", "美股%", "台股%", "現金%", "虛幣%"]
     st.dataframe(display_df.head(15), use_container_width=True, hide_index=True)
 
     if len(df) > 1:
-        chart_df = df[["date", "total"]].set_index("date")
-        chart_df.index = pd.to_datetime(chart_df.index)
-        chart_df = chart_df.sort_index()
-        st.line_chart(chart_df, color=["#4fd1c5"])
+        chart_df = df[["date", "total", "net_asset"]].copy()
+        chart_df = chart_df.dropna(subset=["date"])
+        chart_df["date"] = pd.to_datetime(chart_df["date"])
+        chart_df = chart_df.set_index("date").sort_index()
+        chart_df.columns = ["總資產", "淨資產"]
+        st.line_chart(chart_df, color=["#4fd1c5", "#fc8181"])
 
     csv = display_df.to_csv(index=False).encode("utf-8-sig")
     st.download_button("📥 下載完整 CSV 備份", data=csv, file_name="asset_history.csv", mime="text/csv")
